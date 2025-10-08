@@ -13,6 +13,9 @@ cap = cv2.VideoCapture(0)
 canvas = None
 
 prev_time = 0
+draw_color = (0,255,255)
+brush_thickness = 5
+eraser_radius = 40
 
 with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7) as hands:
     prev_x, prev_y = 0, 0
@@ -31,25 +34,44 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7) as hands:
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
 
+        mode = "none"
+
         if result.multi_hand_landmarks:
             for hand in result.multi_hand_landmarks:
                 x = int(hand.landmark[8].x * w)
                 y = int(hand.landmark[8].y * h)
 
-                cv2.circle(frame, (x, y), 8, (0, 0, 255), -1)
+                is_fist = all(
+                    hand.landmark[i].y > hand.landmark[i - 2].y
+                    for i in [8, 12, 16, 20]
+                )
 
-                if prev_x == 0 and prev_y == 0:
-                    prev_x, prev_y = x, y
+                if is_fist:
+                    mode = "erase"
+                else:
+                    mode = "draw"
 
-                cv2.line(canvas, (prev_x, prev_y), (x, y), (255, 0, 0), 5)
-                prev_x, prev_y = x, y
+                match mode:
+                    case "draw":
+                        cv2.circle(frame, (x, y), 8, draw_color, -1)
+                        if prev_x == 0 and prev_y == 0:
+                            prev_x, prev_y = x, y
+                        cv2.line(canvas, (prev_x, prev_y), (x, y), draw_color, brush_thickness)
+                        prev_x, prev_y = x, y
+
+                    case "erase":
+                        cv2.circle(frame, (x, y), eraser_radius, (0, 0, 255), 2)
+                        cv2.circle(canvas, (x, y), eraser_radius, (0, 0, 0), -1)
+                        prev_x, prev_y = 0, 0 
+
+                    case _:
+                        prev_x, prev_y = 0, 0 
 
                 mp_drawing.draw_landmarks(frame, hand, mp_hands.HAND_CONNECTIONS)
         else:
             prev_x, prev_y = 0, 0
 
         blended = cv2.addWeighted(frame, 0.5, canvas, 0.5, 0)
-
         curr_time = time.time()
         fps = 1 / (curr_time - prev_time) if prev_time else 0
         prev_time = curr_time
